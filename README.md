@@ -118,4 +118,4 @@ Pour modéliser fidèlement la réalité de l'infrastructure cloud et répondre 
 
 ## 👨‍💻 Auteurs
 * **Yoann Lehong Cheffson** - [Mon GitHub](https://github.com/Yoannlcf/My-Data-Journey)
-* **Alicia Liu** - [Lien GitHub du Binôme]
+* **Alicia Liu** - [Lien GitHub du Binôme](https://github.com/alicialiu0507)]
