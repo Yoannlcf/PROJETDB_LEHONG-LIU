@@ -1,0 +1,157 @@
+Donne les requêtes d'insertion permettant de remplir la base de données MySQL `cloud_provider` d'un fournisseur de services cloud (IaaS et PaaS, inspiré de Microsoft Azure), dont le modèle relationnel est le suivant :
+
+- client (id_client, nom_entreprise, mail_client, num_tel_client) — clé primaire : id_client
+- abonnement (id_abonnement, date_debut_abonnement, niveau_abonnement, #id_client) — clé primaire : id_abonnement
+- base_de_donnees (id_base_de_donnees, nom_bd, moteur_bd, stockage_bd, #id_abonnement) — clé primaire : id_base_de_donnees
+- ticket_support (id_ticket, date_ouverture_ticket, description, statut_ticket, priorite_resolution_ticket, #id_client, #id_abonnement) — clé primaire : id_ticket
+- centre_de_donnees (id_centre, ville_centre, pays_centre, capacite_mw_centre) — clé primaire : id_centre
+- serveur_physique (id_serveur, ip_serveur, ram_totale_go_serveur, cpu_total_serveur, #id_centre) — clé primaire : id_serveur
+- machine_virtuelle (id_machine, os_machine, ram_go_machine, vcpu_machine, hote_machine, ip_publique_machine, ip_privee_machine, #id_abonnement, #id_serveur) — clé primaire : id_machine
+
+Les clés primaires correspondent aux id, sauf si autre chose est précisé (quand c'est un attribut composé) les clés étrangères sont identifiées par les #, et ont le même nom que les clés primaires auxquelles elles font référence.
+
+Il doit y avoir : 8 lignes pour la table centre_de_donnees, 40 serveurs physiques répartis dans tous les centres, 30 clients qui ont chacun au moins un abonnement, 50 abonnements, au moins 120 machines virtuelles, 40 bases de données managées et au moins 80 tickets de support.
+Pour que la base soit exploitable par des requêtes d'analyse, prévois aussi : au moins 5 serveurs physiques sans aucune machine virtuelle, au moins 5 abonnements sans machine virtuelle ni base de données, au moins 5 clients qui n'ont jamais ouvert de ticket, et des machines virtuelles sans adresse IP publique (valeur NULL).
+
+Les centres de données sont au nombre de 8 dont voici les caractéristiques :
+- id : FR-PAR-01, ville : Paris, pays : France, capacité : 120 MW
+- id : FR-MRS-01, ville : Marseille, pays : France, capacité : 80 MW
+- id : DE-FRA-01, ville : Francfort, pays : Allemagne, capacité : 150 MW
+- id : NL-AMS-01, ville : Amsterdam, pays : Pays-Bas, capacité : 110 MW
+- id : IE-DUB-01, ville : Dublin, pays : Irlande, capacité : 140 MW
+- id : US-ASH-01, ville : Ashburn, pays : États-Unis, capacité : 300 MW
+- id : CA-MTL-01, ville : Montréal, pays : Canada, capacité : 60 MW
+- id : SG-SIN-01, ville : Singapour, pays : Singapour, capacité : 90 MW
+
+Les clés étrangères doivent faire référence aux clés primaires existantes : donne les lignes en commençant par remplir les tables dans lesquelles il n'y a pas de clés étrangères, puis les tables dans lesquelles les clés étrangères font références à des clés primaires des tables déjà remplies.
+
+Les données doivent respecter les contraintes de validation suivantes :
+
+-- -----------------------------------------------------------------------------
+-- CLIENT
+-- -----------------------------------------------------------------------------
+ALTER TABLE client
+    -- deux clients ne partagent pas la même adresse de contact
+    ADD CONSTRAINT uq_client_mail UNIQUE (mail_client),
+    -- identifiant sur 8 chiffres exactement (dictionnaire de données)
+    ADD CONSTRAINT ck_client_id CHECK (id_client BETWEEN 10000000 AND 99999999),
+    -- format d'e-mail : texte@domaine.extension
+    ADD CONSTRAINT ck_client_mail
+        CHECK (mail_client REGEXP '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'),
+    -- format international : + suivi de 8 à 14 chiffres (E.164)
+    ADD CONSTRAINT ck_client_tel CHECK (num_tel_client REGEXP '^\\+[0-9]{8,14}$'),
+    -- nom non vide (une chaîne d'espaces passerait NOT NULL)
+    ADD CONSTRAINT ck_client_nom CHECK (CHAR_LENGTH(TRIM(nom_entreprise)) >= 2);
+
+-- -----------------------------------------------------------------------------
+-- ABONNEMENT
+-- -----------------------------------------------------------------------------
+ALTER TABLE abonnement
+    ALTER COLUMN niveau_abonnement SET DEFAULT 'Standard',
+    -- RG02 : niveaux de service proposés
+    ADD CONSTRAINT ck_abonnement_niveau
+        CHECK (niveau_abonnement IN ('Basique', 'Standard', 'Premium', 'Entreprise')),
+    -- identifiant sur 10 chiffres
+    ADD CONSTRAINT ck_abonnement_id
+        CHECK (id_abonnement BETWEEN 1000000000 AND 9999999999),
+    -- pas d'abonnement antérieur au lancement de l'offre cloud
+    ADD CONSTRAINT ck_abonnement_date CHECK (date_debut_abonnement >= '2015-01-01');
+
+-- -----------------------------------------------------------------------------
+-- BASE DE DONNÉES MANAGÉE
+-- -----------------------------------------------------------------------------
+ALTER TABLE base_de_donnees
+    -- un même abonnement ne contient pas deux bases du même nom (UNIQUE composé)
+    ADD CONSTRAINT uq_bd_nom_par_abonnement UNIQUE (id_abonnement, nom_bd),
+    -- RG09 : moteurs SQL et NoSQL proposés
+    ADD CONSTRAINT ck_bd_moteur
+        CHECK (moteur_bd IN ('PostgreSQL', 'MySQL', 'MariaDB', 'SQL Server',
+                             'Cosmos DB', 'MongoDB', 'Redis')),
+    -- stockage alloué : de 5 Go à 100 To (6 chiffres max)
+    ADD CONSTRAINT ck_bd_stockage CHECK (stockage_bd BETWEEN 5 AND 102400),
+    -- nom technique : minuscules, chiffres, tirets ou underscores, commence par une lettre
+    ADD CONSTRAINT ck_bd_nom CHECK (nom_bd REGEXP '^[a-z][a-z0-9_-]{2,49}$');
+
+-- -----------------------------------------------------------------------------
+-- TICKET DE SUPPORT
+-- -----------------------------------------------------------------------------
+ALTER TABLE ticket_support
+    ALTER COLUMN statut_ticket SET DEFAULT 'Ouvert',
+    ALTER COLUMN priorite_resolution_ticket SET DEFAULT 'Normale',
+    -- RG12 : priorités autorisées
+    ADD CONSTRAINT ck_ticket_priorite
+        CHECK (priorite_resolution_ticket IN ('Basse', 'Normale', 'Haute', 'Critique')),
+    -- RG12 : statuts d'avancement
+    ADD CONSTRAINT ck_ticket_statut
+        CHECK (statut_ticket IN ('Ouvert', 'En cours', 'En attente client',
+                                 'Résolu', 'Fermé')),
+    -- une description exploitable par le support
+    ADD CONSTRAINT ck_ticket_description CHECK (CHAR_LENGTH(description) >= 10);
+
+-- date d'ouverture par défaut : maintenant
+ALTER TABLE ticket_support
+    MODIFY date_ouverture_ticket DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+-- -----------------------------------------------------------------------------
+-- CENTRE DE DONNÉES
+-- -----------------------------------------------------------------------------
+ALTER TABLE centre_de_donnees
+    -- code au format PAYS-VILLE-NN, ex. FR-PAR-01 (inspiré des régions Azure)
+    ADD CONSTRAINT ck_centre_code CHECK (id_centre REGEXP '^[A-Z]{2}-[A-Z]{3}-[0-9]{2}$'),
+    -- capacité électrique réaliste : 1 à 500 MW
+    ADD CONSTRAINT ck_centre_capacite CHECK (capacite_mw_centre BETWEEN 1 AND 500);
+
+-- -----------------------------------------------------------------------------
+-- SERVEUR PHYSIQUE
+-- -----------------------------------------------------------------------------
+ALTER TABLE serveur_physique
+    -- une IP de gestion n'est attribuée qu'à un seul serveur
+    ADD CONSTRAINT uq_serveur_ip UNIQUE (ip_serveur),
+    -- réseau de gestion interne : plage privée 10.x.x.x
+    ADD CONSTRAINT ck_serveur_ip
+        CHECK (ip_serveur REGEXP '^10\\.([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})$'),
+    -- RAM : de 64 Go à 8 To ; cœurs : de 8 à 512
+    ADD CONSTRAINT ck_serveur_ram CHECK (ram_totale_go_serveur BETWEEN 64 AND 8192),
+    ADD CONSTRAINT ck_serveur_cpu CHECK (cpu_total_serveur BETWEEN 8 AND 512),
+    -- au moins 2 Go de RAM par cœur (contrainte multi-colonnes)
+    ADD CONSTRAINT ck_serveur_ratio CHECK (ram_totale_go_serveur >= 2 * cpu_total_serveur);
+
+-- -----------------------------------------------------------------------------
+-- MACHINE VIRTUELLE
+-- -----------------------------------------------------------------------------
+ALTER TABLE machine_virtuelle
+    -- un nom d'hôte et une IP publique sont uniques sur toute la plateforme
+    -- (UNIQUE accepte plusieurs NULL : les VM sans IP publique restent possibles)
+    ADD CONSTRAINT uq_vm_hote UNIQUE (hote_machine),
+    ADD CONSTRAINT uq_vm_ip_publique UNIQUE (ip_publique_machine),
+    -- RG08 : systèmes d'exploitation du catalogue (masque LIKE)
+    ADD CONSTRAINT ck_vm_os
+        CHECK (os_machine LIKE 'Windows Server%' OR os_machine LIKE 'Ubuntu%'
+            OR os_machine LIKE 'Red Hat%'        OR os_machine LIKE 'Debian%'
+            OR os_machine LIKE 'Rocky Linux%'    OR os_machine LIKE 'SUSE%'),
+    -- RG08 : ressources allouées (tailles Azure : 1 à 416 vCPU, 1 Go à 4 To)
+    ADD CONSTRAINT ck_vm_vcpu CHECK (vcpu_machine BETWEEN 1 AND 416),
+    ADD CONSTRAINT ck_vm_ram  CHECK (ram_go_machine BETWEEN 1 AND 4096),
+    -- nom d'hôte : lettres minuscules, chiffres et tirets
+    ADD CONSTRAINT ck_vm_hote CHECK (hote_machine REGEXP '^[a-z][a-z0-9-]{1,49}$'),
+    -- IP privée : plages RFC 1918 (10/8, 172.16/12, 192.168/16)
+    ADD CONSTRAINT ck_vm_ip_privee CHECK (
+        ip_privee_machine REGEXP '^10\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}$'
+     OR ip_privee_machine REGEXP '^172\\.(1[6-9]|2[0-9]|3[01])\\.[0-9]{1,3}\\.[0-9]{1,3}$'
+     OR ip_privee_machine REGEXP '^192\\.168\\.[0-9]{1,3}\\.[0-9]{1,3}$'),
+    -- IP publique : format IPv4 et hors plages privées (NOT)
+    ADD CONSTRAINT ck_vm_ip_publique CHECK (
+        ip_publique_machine IS NULL
+     OR (ip_publique_machine REGEXP '^[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}$'
+         AND NOT (ip_publique_machine LIKE '10.%' OR ip_publique_machine LIKE '192.168.%'))),
+    -- les deux adresses d'une VM sont distinctes
+    ADD CONSTRAINT ck_vm_ip_distinctes CHECK (ip_publique_machine <> ip_privee_machine);
+
+Elles doivent aussi respecter les règles vérifiées par des triggers :
+- un ticket concerne un abonnement qui appartient au client qui l'ouvre (même id_client) ;
+- un ticket est ouvert après la date de début de son abonnement, et au plus tard le 05/11/2026 ;
+- la somme de la RAM des machines virtuelles d'un même serveur physique ne dépasse pas la RAM totale de ce serveur.
+
+Assure-toi que les noms des entreprises clientes sont fictifs et font référence à des secteurs et des pays variés, que les tailles de VM correspondent à des gabarits réalistes d'Azure, et que les descriptions des tickets correspondent à des problèmes techniques ou administratifs crédibles.
+
+Fournis l'ensemble sous la forme d'un script SQL prêt à être exécuté.
